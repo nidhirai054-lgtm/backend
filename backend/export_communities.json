@@ -1,0 +1,26 @@
+[
+  {
+    "_id": "6a065c5fd641017a0f76a295",
+    "name": "Google Office (Bangalore)",
+    "email_domain": "google.com",
+    "member_ids": [
+      "6a065c5fd641017a0f76a298",
+      "6a065c60d641017a0f76a299",
+      "6a065c61d641017a0f76a29d",
+      "6a06c32712486b1b302b89f3"
+    ],
+    "women_only": false,
+    "created_at": "2026-05-14 23:35:59.572000"
+  },
+  {
+    "_id": "6a065c5fd641017a0f76a296",
+    "name": "Presidency University",
+    "email_domain": "presidency.edu.in",
+    "member_ids": [
+      "6a065c60d641017a0f76a29c",
+      "6a065c61d641017a0f76a29e"
+    ],
+    "women_only": false,
+    "created_at": "2026-05-14 23:35:59.573000"
+  }
+]

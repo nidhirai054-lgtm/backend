@@ -1,0 +1,49 @@
+# Byte-compiled / optimized / DLL support
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.db
+*.log
+.DS_Store
+
+# Environments
+backend/venv/
+.venv/
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# Local configuration
+backend/.env
+frontend/.env
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Large binaries and archives
+backend/mongodb_bin/
+backend/mongodb_data/
+backend/mongodb-macos-arm64-8.0.4.tgz
+*.tgz
+*.zip
+*.tar.gz
+
+# Frontend dependencies and builds
+frontend/node_modules/
+frontend/dist/
+node_modules/
+dist/

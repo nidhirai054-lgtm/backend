@@ -1,0 +1,136 @@
+{
+  "intents": [
+    {
+      "tag": "greeting",
+      "patterns": [
+        "Hi", "Hello", "Hey", "Good morning", "Good evening",
+        "Namaste", "Hola", "Howdy", "What's up", "Greetings",
+        "hello", "hi", "hey", "hii", "helo", "hellooo",
+        "good morning", "good evening", "good afternoon",
+        "yo", "sup", "wassup", "heya", "hiya"
+      ],
+      "responses": [
+        "Hello! Welcome to SmartRide. How can I help you today?",
+        "Hi there! Need a ride or have a question?",
+        "Hey! I'm your SmartRide assistant. What can I do for you?"
+      ]
+    },
+    {
+      "tag": "booking",
+      "patterns": [
+        "Book a cab", "I need a ride", "Get me a taxi", "Book a ride",
+        "I want to go to", "Take me to", "I need to go", "Can you book",
+        "Schedule a pickup", "Need a driver", "Cab chahiye", "Ride book karo",
+        "Book cab from", "Pick me up from", "I need a car",
+        "i want to book a ride", "book me a cab", "get a ride",
+        "need a cab", "want a ride", "book ride", "i want ride",
+        "can i book", "help me book", "book for me"
+      ],
+      "responses": [
+        "Sure! Where would you like to be picked up from?",
+        "I'll help you book a ride. What's your pickup location?",
+        "Let's get you a ride! Where are you starting from?"
+      ]
+    },
+    {
+      "tag": "cancellation",
+      "patterns": [
+        "Cancel my ride", "Cancel the booking", "I want to cancel",
+        "Cancel cab", "Stop my ride", "Don't need the ride anymore",
+        "Call off the booking", "Abort ride", "Cancel meri ride",
+        "Cancel kar do", "Ride cancel karo",
+        "cancel my ride", "cancel ride", "cancel booking",
+        "i want to cancel", "cancel it", "stop the ride",
+        "dont need ride", "abort my ride"
+      ],
+      "responses": [
+        "I'll cancel your ride right away. Can you confirm your ride ID?",
+        "Sure, I'll process the cancellation. One moment please.",
+        "Cancelling your ride now."
+      ]
+    },
+    {
+      "tag": "fare_estimate",
+      "patterns": [
+        "How much will it cost", "What's the fare", "Fare estimate",
+        "Price from to", "How much from", "Kitna paisa lagega",
+        "Cost estimate", "What is the charge", "How much does it cost",
+        "Fare calculate", "Estimate price", "What will I be charged"
+      ],
+      "responses": [
+        "I can estimate the fare for you. What are your pickup and drop locations?",
+        "Sure! Share your pickup and dropoff points and I'll calculate the fare.",
+        "Let me calculate that for you. Where are you traveling from and to?"
+      ]
+    },
+    {
+      "tag": "ride_status",
+      "patterns": [
+        "Where is my driver", "Track my ride", "Ride status",
+        "Where is the cab", "Driver kahan hai", "When will driver arrive",
+        "How far is my driver", "Status of my booking", "Is my driver on the way",
+        "Track cab", "ETA for my ride", "My ride status"
+      ],
+      "responses": [
+        "Let me check your ride status. Your driver is on the way!",
+        "Tracking your driver now. They should arrive shortly.",
+        "Your driver is approximately 5 minutes away based on last GPS update."
+      ]
+    },
+    {
+      "tag": "pooling",
+      "patterns": [
+        "I want to pool", "Shared ride", "Carpool", "Pool ride",
+        "Can I share a ride", "Ridesharing", "Split the fare",
+        "Pool kar sakte hain", "Shared cab", "Pool booking",
+        "Half price ride", "Share my cab", "Find me a pool"
+      ],
+      "responses": [
+        "Great choice! Pooling saves you up to 50% on fare. Want me to find a shared ride?",
+        "I'll look for a pool ride for you. What's your pickup and drop?",
+        "Pooled rides also earn you 5 Green Points! Shall I find a match?"
+      ]
+    },
+    {
+      "tag": "green_options",
+      "patterns": [
+        "EV ride", "Electric vehicle", "Eco ride", "Green ride",
+        "Carbon friendly", "Electric cab", "I want an EV",
+        "Sustainable ride", "Zero emission", "Eco friendly cab",
+        "Green option", "Environment friendly", "Electric car",
+        "Harit sawari", "Green points", "CO2 save"
+      ],
+      "responses": [
+        "Excellent! EV rides earn you 10 Green Points and save CO₂. Shall I book one?",
+        "Great choice for the planet! I'll find you an electric vehicle nearby.",
+        "EV rides save approximately 0.16 kg CO₂ per km. Want me to book one?"
+      ]
+    },
+    {
+      "tag": "women_only",
+      "patterns": [
+        "Women only ride", "Female driver", "Lady driver",
+        "Safe ride for women", "Women driver only", "Only female driver",
+        "Mahila driver chahiye", "Girl driver", "Lady cab",
+        "Safety mode", "Women safe ride"
+      ],
+      "responses": [
+        "Activating women-only mode — I'll exclusively match you with verified female drivers.",
+        "Your safety is our priority. Finding a female driver for you now.",
+        "Women-only hard filter applied. No fallback to male drivers."
+      ]
+    },
+    {
+      "tag": "goodbye",
+      "patterns": [
+        "Bye", "Goodbye", "See you", "Later", "Take care",
+        "Alvida", "Good night", "Ciao", "Talk later"
+      ],
+      "responses": [
+        "Goodbye! Have a safe ride!",
+        "Take care! See you next time.",
+        "Bye! Stay safe on the road!"
+      ]
+    }
+  ]
+}
