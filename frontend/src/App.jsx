@@ -70,6 +70,24 @@ const AdminRoute = ({ children }) => {
   return children;
 };
 
+const RiderRoute = ({ children }) => {
+  const { user, loading } = useAuth();
+  
+  if (loading) {
+    return <div className="flex items-center justify-center h-screen text-primary font-bold">Loading...</div>;
+  }
+  
+  if (!user) {
+    return <Navigate to="/login" />;
+  }
+  
+  if (user.role === 'driver') {
+    return <Navigate to="/" />;
+  }
+  
+  return children;
+};
+
 /**
  * Inner app shell — has access to AuthContext so can subscribe to push
  * notifications automatically when the user is logged in.
@@ -102,21 +120,21 @@ const AppShell = () => {
         } />
         
         <Route path="/my-rides" element={
-          <PrivateRoute>
+          <RiderRoute>
             <MyRides />
-          </PrivateRoute>
+          </RiderRoute>
         } />
-
+        
         <Route path="/community" element={
-          <PrivateRoute>
+          <RiderRoute>
             <Community />
-          </PrivateRoute>
+          </RiderRoute>
         } />
 
         <Route path="/space" element={
-          <PrivateRoute>
+          <RiderRoute>
             <SpacePage />
-          </PrivateRoute>
+          </RiderRoute>
         } />
 
         <Route path="/dashboard" element={
@@ -126,9 +144,9 @@ const AppShell = () => {
         } />
 
         <Route path="/green-rides" element={
-          <PrivateRoute>
+          <RiderRoute>
             <GreenRides />
-          </PrivateRoute>
+          </RiderRoute>
         } />
 
         <Route path="/settings" element={

@@ -6,6 +6,7 @@ import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faComments, faXmark, faPaperPlane, faRobot, faCircleCheck, faMapLocationDot, faMicrophone, faVolumeHigh, faVolumeXmark, faLanguage } from '@fortawesome/free-solid-svg-icons';
 import useSpeechRecognition from '../hooks/useSpeechRecognition';
 import { rideEvents, RIDE_EVENTS } from '../utils/rideEvents';
+import { useAuth } from '../context/AuthContext';
 
 
 // Pages where the widget should be hidden entirely
@@ -51,6 +52,7 @@ const STYLES = `
 `;
 
 const ChatWidget = () => {
+  const { user } = useAuth();
   const location = useLocation();
   const navigate  = useNavigate();
 
@@ -268,6 +270,7 @@ const ChatWidget = () => {
 
   const handleSubmit = (e) => { e.preventDefault(); send(input); };
 
+  if (user?.role === 'driver') return null;
   if (HIDDEN_ROUTES.includes(location.pathname)) return null;
 
   return createPortal(

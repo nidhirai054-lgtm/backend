@@ -8,6 +8,9 @@ import os
 import boto3
 from botocore.exceptions import ClientError
 
+from dotenv import load_dotenv
+load_dotenv(override=True)
+
 MODEL_ID = "amazon.nova-lite-v1:0"
 
 _client = None
@@ -19,6 +22,8 @@ def _get_client():
         _client = boto3.client(
             "bedrock-runtime",
             region_name=os.getenv("AWS_REGION", "us-east-1"),
+            aws_access_key_id=os.getenv("AWS_ACCESS_KEY_ID"),
+            aws_secret_access_key=os.getenv("AWS_SECRET_ACCESS_KEY"),
         )
     return _client
 
