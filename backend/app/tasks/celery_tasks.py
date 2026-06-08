@@ -73,3 +73,10 @@ def _handle_anomaly(driver_id: str, ride_id: str, score: float, alert_type: str)
     if passenger_id:
         socketio.emit("safety_alert", payload, room=f"passenger_{passenger_id}")
     socketio.emit("safety_alert", payload, room="admin")
+
+@celery.task(name="tasks.log_sos_event_task")
+def log_sos_event_task(phone: str, message: str):
+    """
+    Background task to log SOS alerts on the server console.
+    """
+    print(f"\n🆘 [SOS Alert Logged] Contact Phone: {phone}\nMessage:\n{message}\n")

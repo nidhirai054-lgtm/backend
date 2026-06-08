@@ -5,8 +5,10 @@ Entities: PICKUP_LOC, DROPOFF_LOC, RIDE_TYPE
 
 import re
 import spacy
+from threading import Lock
 
 _nlp = None
+_nlp_lock = Lock()
 
 # Ride type keywords
 EV_KEYWORDS     = ["electric", "ev", "green", "eco", "zero emission"]
@@ -25,12 +27,13 @@ TO_PATTERN = re.compile(
 
 def _load_nlp():
     global _nlp
-    if _nlp is None:
-        try:
-            _nlp = spacy.load("en_core_web_sm")
-        except OSError:
-            # Model not downloaded — use blank pipeline
-            _nlp = spacy.blank("en")
+    with _nlp_lock:
+        if _nlp is None:
+            try:
+                _nlp = spacy.load("en_core_web_sm")
+            except OSError:
+                # Model not downloaded — use blank pipeline
+                _nlp = spacy.blank("en")
 
 
 def extract_booking_entities(transcript: str) -> dict:

@@ -48,12 +48,18 @@ const DriverSearchModal = ({
   pickup, 
   onCancel, 
   onDriverFound,
-  estimatedWaitTime = 30 
+  estimatedWaitTime = 30,
+  statusMessage = '',
+  driversCount = 0
 }) => {
   const [searchRadius, setSearchRadius] = useState(1);
   const [elapsedTime, setElapsedTime] = useState(0);
-  const [driversNearby, setDriversNearby] = useState(0);
+  const [driversNearby, setDriversNearby] = useState(driversCount);
   const [searchPhase, setSearchPhase] = useState('searching'); // searching, found, timeout
+
+  useEffect(() => {
+    setDriversNearby(driversCount);
+  }, [driversCount]);
 
   useEffect(() => {
     // Simulate expanding search radius
@@ -69,11 +75,6 @@ const DriverSearchModal = ({
       setElapsedTime(prev => prev + 1);
     }, 1000);
 
-    // Simulate finding drivers (random for demo)
-    const driversInterval = setInterval(() => {
-      setDriversNearby(Math.floor(Math.random() * 5) + 1);
-    }, 2000);
-
     // Timeout after estimatedWaitTime
     const timeout = setTimeout(() => {
       setSearchPhase('timeout');
@@ -82,7 +83,6 @@ const DriverSearchModal = ({
     return () => {
       clearInterval(radiusInterval);
       clearInterval(timerInterval);
-      clearInterval(driversInterval);
       clearTimeout(timeout);
     };
   }, [estimatedWaitTime]);
@@ -142,16 +142,25 @@ const DriverSearchModal = ({
 
         {/* Map with expanding search radius */}
         <div className="h-80 relative">
-          <MapContainer
-            center={[pickup.lat, pickup.lng]}
-            zoom={13}
-            style={{ height: '100%', width: '100%' }}
-            scrollWheelZoom={false}
-            zoomControl={false}
-          >
-            <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
-            <AnimatedSearchRadius center={pickup} radius={searchRadius} />
-          </MapContainer>
+          {pickup?.lat && pickup?.lng ? (
+            <MapContainer
+              center={[pickup.lat, pickup.lng]}
+              zoom={13}
+              style={{ height: '100%', width: '100%' }}
+              scrollWheelZoom={false}
+              zoomControl={false}
+            >
+              <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
+              <AnimatedSearchRadius center={pickup} radius={searchRadius} />
+            </MapContainer>
+          ) : (
+            <div className="h-full bg-gray-100 flex items-center justify-center">
+              <div className="text-center text-gray-400">
+                <FontAwesomeIcon icon={faSearch} className="text-4xl mb-2 animate-pulse" />
+                <p className="text-sm font-bold">Locating your address...</p>
+              </div>
+            </div>
+          )}
 
           {/* Pickup marker overlay */}
           <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-[1000] pointer-events-none">
@@ -180,7 +189,9 @@ const DriverSearchModal = ({
               className="text-3xl text-emerald-500 animate-spin" 
             />
             <div>
-              <p className="text-lg font-bold text-gray-900">Searching for drivers...</p>
+              <p className="text-lg font-bold text-gray-900">
+                {statusMessage || 'Searching for drivers...'}
+              </p>
               <p className="text-sm text-gray-500">This usually takes a few seconds</p>
             </div>
           </div>

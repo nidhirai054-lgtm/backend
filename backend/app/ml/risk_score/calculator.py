@@ -40,8 +40,10 @@ def _anomaly_rate(driver_id: str) -> float:
 
 
 def _time_of_day_risk() -> float:
-    """Higher risk at night (22:00–05:00)."""
-    hour = datetime.utcnow().hour
+    """Higher risk at night (22:00–05:00 IST)."""
+    from datetime import timezone, timedelta
+    IST = timezone(timedelta(hours=5, minutes=30))
+    hour = datetime.now(IST).hour
     if 22 <= hour or hour <= 5:
         return 0.8
     elif 6 <= hour <= 9 or 17 <= hour <= 21:
@@ -59,11 +61,26 @@ def _zone_risk(driver_id: str) -> float:
     if not driver:
         return 0.0
 
-    # Mock high-risk zones (e.g. specific Lat/Lng bounding boxes)
-    # Zone 1: "Red Zone Alpha"
+    # Bangalore high-risk zones (areas with elevated night-time incident density)
     high_risk_zones = [
-        {"name": "Zone Alpha", "lat_min": 28.5, "lat_max": 28.6, "lng_min": 77.1, "lng_max": 77.2, "risk": 0.8},
-        {"name": "Zone Beta",  "lat_min": 19.0, "lat_max": 19.1, "lng_min": 72.8, "lng_max": 72.9, "risk": 0.6},
+        {
+            "name": "Outer Ring Road Corridor",
+            "lat_min": 12.90, "lat_max": 12.96,
+            "lng_min": 77.70, "lng_max": 77.76,
+            "risk": 0.7
+        },
+        {
+            "name": "Hosur Road / Electronic City",
+            "lat_min": 12.83, "lat_max": 12.92,
+            "lng_min": 77.60, "lng_max": 77.70,
+            "risk": 0.6
+        },
+        {
+            "name": "Tumkur Road Industrial Belt",
+            "lat_min": 13.00, "lat_max": 13.08,
+            "lng_min": 77.50, "lng_max": 77.56,
+            "risk": 0.5
+        },
     ]
 
     for zone in high_risk_zones:

@@ -1,6 +1,6 @@
 from mongoengine import (
     Document, StringField, FloatField, IntField,
-    BooleanField, ReferenceField, DateTimeField, DictField
+    BooleanField, ReferenceField, DateTimeField, DictField, ListField
 )
 from datetime import datetime
 
@@ -38,6 +38,24 @@ class Ride(Document):
     created_at         = DateTimeField(default=datetime.utcnow)
     completed_at       = DateTimeField(null=True)
 
+    # Rating fields (populated post-ride)
+    passenger_rating   = FloatField(null=True)   # 1–5 stars from passenger → driver
+    passenger_review   = StringField(null=True)
+    driver_rating      = FloatField(null=True)    # 1–5 stars from driver → passenger
+    rated_at           = DateTimeField(null=True)
+
+    # Group ride fields
+    proposal_id        = ReferenceField("RideProposal", null=True)
+    is_group_ride      = BooleanField(default=False)
+    stops              = ListField(DictField())   # [{user_id, name, pickup, status, picked_up_at}]
+    per_passenger_fare = DictField()              # {user_id: fare_amount}
+
+    # Payment status
+    payment_status     = StringField(
+                            default="unpaid",
+                            choices=["unpaid", "paid", "waived"]
+                         )
+
     def to_json_safe(self):
         passenger_id_str = None
         if self.passenger_id:
@@ -66,5 +84,17 @@ class Ride(Document):
             "route_polyline": self.route_polyline,
             "estimated_duration_minutes": self.estimated_duration_minutes,
             "surge_multiplier": self.surge_multiplier,
+            "driver_current_location": self.driver_current_location,
+            "actual_eta_minutes": self.actual_eta_minutes,
             "created_at": self.created_at.isoformat(),
+            "completed_at": self.completed_at.isoformat() if self.completed_at else None,
+            "passenger_rating": self.passenger_rating,
+            "passenger_review": self.passenger_review,
+            "driver_rating": self.driver_rating,
+            "rated_at": self.rated_at.isoformat() if self.rated_at else None,
+            "payment_status":     self.payment_status,
+            "proposal_id":        str(self.proposal_id.id) if self.proposal_id else None,
+            "is_group_ride":      self.is_group_ride,
+            "stops":              self.stops or [],
+            "per_passenger_fare": self.per_passenger_fare or {},
         }

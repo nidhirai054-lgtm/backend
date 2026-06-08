@@ -5,16 +5,17 @@ import MapView from '../components/MapView';
 import LocationAutocompleteOSM from '../components/LocationAutocompleteOSM';
 import ActiveRideTracking from '../components/ActiveRideTracking';
 import DriverSearchModal from '../components/DriverSearchModal';
-import VoiceButton from '../components/VoiceButton';
+import DriverView from '../components/DriverView';
 import useLocation from '../hooks/useLocation';
 import useSocket from '../hooks/useSocket';
 import api from '../api/axios';
+import { rideEvents, RIDE_EVENTS } from '../utils/rideEvents';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import {
   faCarSide, faBus, faBolt, faLeaf, faUsers, faShieldHalved,
   faLocationDot, faMapPin, faRightFromBracket, faCircleCheck,
   faCircleXmark, faXmark, faSpinner,
-  faCar, faRoute,
+  faCar, faRoute, faGear
 } from '@fortawesome/free-solid-svg-icons';
 
 const RIDE_TYPES = [
@@ -46,7 +47,7 @@ const statusColor = {
 const Home = () => {
   const { user, logout } = useAuth();
   const location = useLocation();
-  const { isConnected, on, off } = useSocket();
+  const { isConnected, on, off, emit, joinRoom } = useSocket();
   const [drivers, setDrivers] = useState([]);
   const [pickup, setPickup] = useState(null);
   const [dropoff, setDropoff] = useState(null);
@@ -59,9 +60,78 @@ const Home = () => {
   const [activeDriver, setActiveDriver] = useState(null);
   const [showSearchModal, setShowSearchModal] = useState(false);
 
+  // Fetch rides and restore active ride on mount only
   useEffect(() => {
-    api.get('/rides/').then(r => setRecentRides(r.data.slice(0, 3))).catch(() => {});
+    api.get('/rides/')
+      .then(res => {
+        const ridesList = res.data || [];
+        setRecentRides(ridesList.slice(0, 3));
+        
+        // Auto-restore active ride state
+        const active = ridesList.find(r => 
+          ['searching', 'driver_assigned', 'driver_arriving', 'in_progress'].includes(r.status)
+        );
+        if (active) {
+          setActiveRide(active);
+          setActiveDriver(active.driver || null);
+          if (active.driver_id) {
+            api.get(`/rides/${active.id}/status`)
+              .then(statusRes => {
+                if (statusRes.data && statusRes.data.driver) {
+                  setActiveDriver(statusRes.data.driver);
+                }
+              })
+              .catch(() => {});
+          }
+        }
+      })
+      .catch(() => {});
   }, []);
+
+  // Listen for ride events Reactively
+  useEffect(() => {
+    const handleRideBooked = ({ ride, driver }) => {
+      setRecentRides(prev => [ride, ...prev].slice(0, 3));
+      setActiveRide(ride);
+      setActiveDriver(driver || null);
+      showToast('Ride booked successfully!');
+    };
+
+    const handleRideUpdated = ({ ride }) => {
+      setRecentRides(prev => prev.map(r => r.id === ride.id ? ride : r));
+      if (activeRide?.id === ride.id) {
+        setActiveRide(prev => ({ ...prev, ...ride }));
+        if (ride.status === 'cancelled') {
+          setTimeout(() => {
+            setActiveRide(null);
+            setActiveDriver(null);
+          }, 1500);
+        }
+      }
+    };
+
+    const handleRideCancelled = ({ rideId }) => {
+      setRecentRides(prev => prev.map(r => r.id === rideId ? { ...r, status: 'cancelled' } : r));
+      if (activeRide?.id === rideId) {
+        setActiveRide(prev => prev ? { ...prev, status: 'cancelled' } : null);
+        showToast('Ride has been cancelled.', 'error');
+        setTimeout(() => {
+          setActiveRide(null);
+          setActiveDriver(null);
+        }, 1500);
+      }
+    };
+
+    rideEvents.on(RIDE_EVENTS.RIDE_BOOKED, handleRideBooked);
+    rideEvents.on(RIDE_EVENTS.RIDE_UPDATED, handleRideUpdated);
+    rideEvents.on(RIDE_EVENTS.RIDE_CANCELLED, handleRideCancelled);
+
+    return () => {
+      rideEvents.off(RIDE_EVENTS.RIDE_BOOKED, handleRideBooked);
+      rideEvents.off(RIDE_EVENTS.RIDE_UPDATED, handleRideUpdated);
+      rideEvents.off(RIDE_EVENTS.RIDE_CANCELLED, handleRideCancelled);
+    };
+  }, [activeRide]);
 
   useEffect(() => {
     const handleDrivers = (data) => setDrivers(data);
@@ -74,41 +144,31 @@ const Home = () => {
     setTimeout(() => setToast(null), 4000);
   };
 
-  const handlePickupSelect = async (locationData) => {
+  const handlePickupSelect = (locationData) => {
     setPickup(locationData);
-    
-    // If dropoff already selected, get estimate
-    if (dropoff) {
-      try {
-        const res = await api.post('/rides/estimate', {
-          pickup: locationData,
-          dropoff,
-          ride_type: booking.rideType
-        });
-        setEstimate(res.data);
-      } catch (err) {
-        console.error('Estimate failed:', err);
-      }
-    }
   };
 
-  const handleDropoffSelect = async (locationData) => {
+  const handleDropoffSelect = (locationData) => {
     setDropoff(locationData);
-    
-    // If pickup already selected, get estimate
-    if (pickup) {
-      try {
-        const res = await api.post('/rides/estimate', {
-          pickup,
-          dropoff: locationData,
-          ride_type: booking.rideType
-        });
-        setEstimate(res.data);
-      } catch (err) {
-        console.error('Estimate failed:', err);
-      }
-    }
   };
+
+  // Centralized estimate refetch handler (Issue 6)
+  useEffect(() => {
+    if (pickup && dropoff) {
+      api.post('/rides/estimate', {
+        pickup,
+        dropoff,
+        ride_type: booking.rideType
+      })
+      .then(res => setEstimate(res.data))
+      .catch(err => {
+        console.error('Estimate failed:', err);
+        setEstimate(null);
+      });
+    } else {
+      Promise.resolve().then(() => setEstimate(null));
+    }
+  }, [pickup, dropoff, booking.rideType]);
 
   const handleBook = async (e) => {
     e.preventDefault();
@@ -148,6 +208,8 @@ const Home = () => {
       setActiveRide(res.data.ride);
       setActiveDriver(res.data.driver);
       
+      rideEvents.emit(RIDE_EVENTS.RIDE_BOOKED, { ride: res.data.ride, driver: res.data.driver });
+      
       setPickup(null);
       setDropoff(null);
       setEstimate(null);
@@ -161,95 +223,11 @@ const Home = () => {
     }
   };
 
-  // Driver View
+  // ── Driver View ──────────────────────────────────────────────────────────
   if (user?.role === 'driver') {
-    return (
-      <div className="flex flex-col min-h-screen bg-gray-50">
-        {toast && <Toast {...toast} onClose={() => setToast(null)} />}
-
-        {/* Navbar */}
-        <nav className="bg-white/80 backdrop-blur-md border-b border-gray-100 px-6 py-3 flex justify-between items-center sticky top-0 z-30 shadow-sm">
-          <div className="flex items-center gap-2">
-            <div className="w-9 h-9 gradient-green rounded-xl flex items-center justify-center shadow-md">
-              <FontAwesomeIcon icon={faCarSide} className="text-white text-sm" />
-            </div>
-            <span className="text-xl font-black text-gray-900 tracking-tight">SmartRide Driver</span>
-          </div>
-
-          <div className="flex items-center gap-3">
-            <div className="flex items-center gap-2 bg-gray-50 border border-gray-100 px-3 py-1.5 rounded-full">
-              <div className="w-6 h-6 gradient-green rounded-full flex items-center justify-center text-white text-xs font-black">
-                {user?.name?.[0]?.toUpperCase()}
-              </div>
-              <span className="text-sm font-bold text-gray-800 hidden sm:block">{user?.name}</span>
-              <span className="text-[10px] font-bold text-blue-500 uppercase">Driver</span>
-            </div>
-            <button onClick={logout}
-              className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-xl transition-all" title="Logout">
-              <FontAwesomeIcon icon={faRightFromBracket} className="w-4 h-4" />
-            </button>
-          </div>
-        </nav>
-
-        <main className="flex-grow flex flex-col md:flex-row" style={{ height: 'calc(100vh - 61px)' }}>
-          {/* Driver Sidebar */}
-          <div className="w-full md:w-[380px] bg-white border-r border-gray-100 flex flex-col overflow-y-auto shadow-xl z-20">
-            <div className="p-6">
-              <h2 className="text-2xl font-black text-gray-900">Your Rides</h2>
-              <p className="text-sm text-gray-400 mt-0.5">Active and recent trips</p>
-            </div>
-
-            {/* Recent rides */}
-            <div className="px-6 pb-4 flex-grow">
-              {recentRides.length === 0 ? (
-                <div className="text-center py-12">
-                  <FontAwesomeIcon icon={faCarSide} className="text-gray-300 text-4xl mb-3" />
-                  <p className="text-gray-400 text-sm">No rides yet</p>
-                </div>
-              ) : (
-                <div className="space-y-3">
-                  {recentRides.map((r, i) => (
-                    <div key={r.id || i} className="p-4 rounded-xl bg-gray-50 border border-gray-100">
-                      <div className="flex items-center justify-between mb-2">
-                        <span className="text-[9px] font-black uppercase px-2 py-1 rounded-full"
-                          style={{ backgroundColor: `${statusColor[r.status]}20`, color: statusColor[r.status] }}>
-                          {r.status}
-                        </span>
-                        <span className="text-xs font-bold text-gray-500">₹{r.fare}</span>
-                      </div>
-                      <p className="text-xs font-semibold text-gray-700 mb-1">
-                        {r.pickup?.address || 'Pickup'} → {r.dropoff?.address || 'Dropoff'}
-                      </p>
-                      <p className="text-[10px] text-gray-400">{r.distance_km?.toFixed(1)} km · {r.ride_type}</p>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            {/* Driver Stats */}
-            <div className="px-6 pb-6 mt-auto">
-              <div className="gradient-green rounded-2xl p-4 text-white relative overflow-hidden">
-                <div className="absolute -right-6 -top-6 w-24 h-24 bg-white/10 rounded-full"></div>
-                <p className="text-[10px] font-black opacity-70 uppercase tracking-widest mb-1">Rating</p>
-                <p className="text-3xl font-black">{user?.avg_rating?.toFixed(1) || '5.0'} ⭐</p>
-                <p className="text-xs opacity-80 mt-1">Keep up the great work!</p>
-              </div>
-            </div>
-          </div>
-
-          {/* Map */}
-          <div className="flex-grow relative overflow-hidden bg-gray-200">
-            <MapView userLocation={location} drivers={[]} />
-            <div className="absolute top-4 right-4 glass px-3 py-1.5 rounded-full shadow flex items-center gap-2 z-[1000]">
-              <div className={`w-2 h-2 rounded-full ${isConnected ? 'bg-green-500 animate-pulse' : 'bg-red-400'}`}></div>
-              <span className="text-[10px] font-black text-gray-600 uppercase tracking-tight">{isConnected ? 'Live' : 'Offline'}</span>
-            </div>
-          </div>
-        </main>
-      </div>
-    );
+    return <DriverView user={user} logout={logout} location={location} isConnected={isConnected} socket={{ on, off, emit }} />;
   }
+
 
   // Passenger View (default)
 
@@ -258,7 +236,7 @@ const Home = () => {
       {toast && <Toast {...toast} onClose={() => setToast(null)} />}
       
       {/* Driver Search Modal */}
-      {showSearchModal && pickup && (
+      {showSearchModal && (
         <DriverSearchModal
           pickup={pickup}
           onCancel={() => setShowSearchModal(false)}
@@ -267,6 +245,7 @@ const Home = () => {
             setActiveDriver(driver);
           }}
           estimatedWaitTime={30}
+          driversCount={drivers.length}
         />
       )}
       
@@ -275,6 +254,7 @@ const Home = () => {
         <ActiveRideTracking
           ride={activeRide}
           driver={activeDriver}
+          socket={{ on, off, emit, joinRoom }}
           onClose={() => {
             setActiveRide(null);
             setActiveDriver(null);
@@ -294,7 +274,7 @@ const Home = () => {
         <div className="hidden sm:flex items-center gap-1">
           {[
             { to: '/my-rides',    label: 'My Rides',     icon: faCar },
-            { to: '/community',   label: 'Community',    icon: faUsers },
+            { to: '/space',       label: 'Space',        icon: faUsers },
             { to: '/green-rides', label: 'Green Impact', icon: faLeaf },
           ].map(({ to, label, icon }) => (
             <Link key={to} to={to}
@@ -313,6 +293,9 @@ const Home = () => {
         </div>
 
         <div className="flex items-center gap-3">
+          <Link to="/settings" title="Settings" className="w-9 h-9 flex items-center justify-center rounded-full bg-gray-50 border border-gray-100 text-gray-500 hover:bg-gray-100 hover:text-gray-900 transition-all">
+            <FontAwesomeIcon icon={faGear} className="text-sm" />
+          </Link>
           <div className="flex items-center gap-2 bg-gray-50 border border-gray-100 px-3 py-1.5 rounded-full">
             <div className="w-6 h-6 gradient-green rounded-full flex items-center justify-center text-white text-xs font-black">
               {user?.name?.[0]?.toUpperCase()}
@@ -457,14 +440,12 @@ const Home = () => {
             </div>
 
             <button type="submit" disabled={loading || !pickup || !dropoff || showSearchModal}
-              className="w-full gradient-green text-white font-black py-4 rounded-2xl shadow-lg hover:shadow-xl hover:opacity-95 transition-all active:scale-95 animate-fade-in-up stagger-5 disabled:opacity-60 flex items-center justify-center gap-2">
+              className="w-full gradient-green text-white font-black py-4 rounded-2xl shadow-lg hover:shadow-xl hover:opacity-95 transition-all active:scale-95 animate-fade-in-up stagger-5 disabled:opacity-60 flex items-center justify-center gap-2 mb-4">
               {showSearchModal
                 ? <><FontAwesomeIcon icon={faSpinner} className="animate-spin" /> Searching...</>
                 : <><FontAwesomeIcon icon={faRoute} /> Book Ride</>}
             </button>
           </form>
-
-          {/* Voice - Removed for now since it needs text input */}
 
           {/* Recent rides */}
           {recentRides.length > 0 && (
@@ -475,9 +456,18 @@ const Home = () => {
                   <button
                     key={r.id || i}
                     onClick={() => {
-                      if (r.status === 'in_progress' || r.status === 'driver_arriving' || r.status === 'driver_assigned') {
+                      if (['searching', 'driver_assigned', 'driver_arriving', 'in_progress'].includes(r.status)) {
                         setActiveRide(r);
-                        setActiveDriver(r.driver_id ? { name: 'Driver', avg_rating: 4.8 } : null);
+                        setActiveDriver(r.driver || null);
+                        if (r.driver_id) {
+                          api.get(`/rides/${r.id}/status`)
+                            .then(statusRes => {
+                              if (statusRes.data && statusRes.data.driver) {
+                                setActiveDriver(statusRes.data.driver);
+                              }
+                            })
+                            .catch(() => {});
+                        }
                       }
                     }}
                     className="w-full flex items-center gap-3 p-3 rounded-xl bg-gray-50 border border-gray-100 hover:bg-gray-100 transition-all animate-fade-in-up cursor-pointer"

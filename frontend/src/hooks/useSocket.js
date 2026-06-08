@@ -33,7 +33,36 @@ const useSocket = (url) => {
     socketRef.current?.off(event);
   }, []);
 
-  return { isConnected, emit, on, off };
+  /**
+   * Join a named socket.io room by emitting a join event.
+   * Convenience wrapper so components don't have to know the event name.
+   *
+   * @param {'passenger' | 'admin' | 'ride'} roomType
+   * @param {string} id  — user_id for 'passenger', ride_id for 'ride'
+   *
+   * Examples:
+   *   joinRoom('passenger', user.id)   → emit('join_passenger_room', {user_id})
+   *   joinRoom('admin')                → emit('join_admin_room', {})
+   *   joinRoom('ride', ride.id)        → emit('join_ride_room', {ride_id})
+   */
+  const joinRoom = useCallback((roomType, id) => {
+    if (!socketRef.current) return;
+    switch (roomType) {
+      case 'passenger':
+        socketRef.current.emit('join_passenger_room', { user_id: id });
+        break;
+      case 'admin':
+        socketRef.current.emit('join_admin_room', {});
+        break;
+      case 'ride':
+        socketRef.current.emit('join_ride_room', { ride_id: id });
+        break;
+      default:
+        console.warn(`[useSocket] Unknown roomType: ${roomType}`);
+    }
+  }, []);
+
+  return { isConnected, emit, on, off, joinRoom };
 };
 
 export default useSocket;

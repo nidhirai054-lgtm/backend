@@ -114,3 +114,98 @@ def resolve_alert(alert_id):
 
     alert.update(resolved=True, resolved_by=user)
     return jsonify({"message": "Alert resolved", "alert_id": alert_id}), 200
+
+
+@safety_bp.route("/sos", methods=["POST"])
+@jwt_required()
+def trigger_sos():
+    """
+    REST fallback for passenger SOS trigger.
+    Expected JSON: {"ride_id": "...", "lat": 12.34, "lng": 56.78}
+    """
+    user_id = get_jwt_identity()
+    data = request.get_json() or {}
+    ride_id = data.get("ride_id")
+    lat = data.get("lat")
+    lng = data.get("lng")
+    notify_contacts = data.get("notify_contacts", True)
+    notify_police   = data.get("notify_police", True)
+
+    if not ride_id:
+        return jsonify({"error": "ride_id is required"}), 400
+
+    ride = Ride.objects(id=ride_id).first()
+    if not ride:
+        return jsonify({"error": "Ride not found"}), 404
+
+    passenger = User.objects(id=user_id).first()
+    driver = User.objects(id=ride.driver_id.id).first() if ride.driver_id else None
+
+    alert = Alert(
+        ride_id=ride,
+        driver_id=driver or ride.driver_id,
+        alert_type="sos",
+        anomaly_score=1.0,
+        notified_contacts=notify_contacts,
+        notified_police=notify_police,
+    )
+    alert.save()
+
+    from app.api.safety.sms import build_whatsapp_sos_message, build_location_url, alert_police_control_room
+    from app.tasks.celery_tasks import log_sos_event_task
+    location_url = build_location_url(lat, lng) if lat and lng else "Location unavailable"
+    passenger_name = passenger.name if passenger else "A passenger"
+
+    pickup_addr = ride.pickup.get("address", "Unknown Pickup")
+    dropoff_addr = ride.dropoff.get("address", "Unknown Dropoff")
+    d_name = driver.name if driver else "Unknown"
+    d_vehicle = driver.vehicle_type if driver and driver.vehicle_type else "Unknown Vehicle"
+    
+    whatsapp_body = build_whatsapp_sos_message(
+        passenger_name=passenger_name,
+        location_url=location_url,
+        ride_id=str(ride.id),
+        pickup=pickup_addr,
+        dropoff=dropoff_addr,
+        driver_name=d_name,
+        driver_vehicle=d_vehicle
+    )
+
+    contacts_notified = 0
+    if notify_contacts and passenger and passenger.emergency_contacts:
+        for contact in passenger.emergency_contacts:
+            if contact.notify_sms and contact.phone:
+                log_sos_event_task.delay(contact.phone, whatsapp_body)
+                contacts_notified += 1
+
+    if notify_police:
+        alert_police_control_room(str(ride.id), location_url)
+
+    payload = {
+        "alert_id": str(alert.id),
+        "ride_id": ride_id,
+        "driver_id": str(driver.id) if driver else None,
+        "driver_name": driver.name if driver else "Unknown",
+        "alert_type": "sos",
+        "score": 1.0,
+        "pickup": ride.pickup,
+        "dropoff": ride.dropoff,
+        "created_at": alert.created_at.isoformat(),
+        "lat": lat,
+        "lng": lng,
+    }
+
+    # Notify admin via socket
+    socketio.emit("sos_triggered", payload, room="admin")
+    socketio.emit("safety_alert", payload, room="admin")
+
+    return jsonify({
+        "message": "SOS triggered successfully",
+        "alert_id": str(alert.id),
+        "contacts_notified": contacts_notified,
+        "notified_police": notify_police,
+        "location_link": location_url,
+        "whatsapp_message": whatsapp_body if notify_contacts else None,
+        "emergency_contacts": [c.to_dict() for c in (passenger.emergency_contacts or [])] if passenger else []
+    }), 200
+

@@ -1,14 +1,17 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
+import usePushNotifications from './hooks/usePushNotifications';
 
 import Login from './pages/Login';
 import Register from './pages/Register';
 import Home from './pages/Home';
 import MyRides from './pages/MyRides';
 import Community from './pages/Community';
+import SpacePage from './pages/SpacePage';
 import Dashboard from './pages/Dashboard';
 import GreenRides from './pages/GreenRides';
+import Settings from './pages/Settings';
 
 import AlertBanner from './components/AlertBanner';
 import ChatWidget from './components/ChatWidget';
@@ -67,50 +70,84 @@ const AdminRoute = ({ children }) => {
   return children;
 };
 
+/**
+ * Inner app shell — has access to AuthContext so can subscribe to push
+ * notifications automatically when the user is logged in.
+ */
+const AppShell = () => {
+  const { user } = useAuth();
+  const { isSubscribed, isSupported, subscribe } = usePushNotifications();
+
+  // Auto-subscribe after login (silent — no UI needed)
+  useEffect(() => {
+    if (user && isSupported && !isSubscribed) {
+      // Small delay to avoid blocking the login render
+      const timer = setTimeout(() => subscribe(), 2000);
+      return () => clearTimeout(timer);
+    }
+  }, [user, isSupported, isSubscribed, subscribe]);
+
+  return (
+    <div className="min-h-screen bg-gray-50">
+      <AlertBanner />
+      <ChatWidget />
+      <Routes>
+        <Route path="/login" element={<Login />} />
+        <Route path="/register" element={<Register />} />
+        
+        <Route path="/" element={
+          <PrivateRoute>
+            <Home />
+          </PrivateRoute>
+        } />
+        
+        <Route path="/my-rides" element={
+          <PrivateRoute>
+            <MyRides />
+          </PrivateRoute>
+        } />
+
+        <Route path="/community" element={
+          <PrivateRoute>
+            <Community />
+          </PrivateRoute>
+        } />
+
+        <Route path="/space" element={
+          <PrivateRoute>
+            <SpacePage />
+          </PrivateRoute>
+        } />
+
+        <Route path="/dashboard" element={
+          <AdminRoute>
+            <Dashboard />
+          </AdminRoute>
+        } />
+
+        <Route path="/green-rides" element={
+          <PrivateRoute>
+            <GreenRides />
+          </PrivateRoute>
+        } />
+
+        <Route path="/settings" element={
+          <PrivateRoute>
+            <Settings />
+          </PrivateRoute>
+        } />
+
+      </Routes>
+    </div>
+  );
+};
+
 function App() {
   return (
     <AuthProvider>
       <Router>
         <ErrorBoundary>
-        <div className="min-h-screen bg-gray-50">
-          <AlertBanner />
-          <ChatWidget />
-          <Routes>
-            <Route path="/login" element={<Login />} />
-            <Route path="/register" element={<Register />} />
-            
-            <Route path="/" element={
-              <PrivateRoute>
-                <Home />
-              </PrivateRoute>
-            } />
-            
-            <Route path="/my-rides" element={
-              <PrivateRoute>
-                <MyRides />
-              </PrivateRoute>
-            } />
-
-            <Route path="/community" element={
-              <PrivateRoute>
-                <Community />
-              </PrivateRoute>
-            } />
-
-            <Route path="/dashboard" element={
-              <AdminRoute>
-                <Dashboard />
-              </AdminRoute>
-            } />
-
-            <Route path="/green-rides" element={
-              <PrivateRoute>
-                <GreenRides />
-              </PrivateRoute>
-            } />
-
-          </Routes>
-        </div>
+          <AppShell />
         </ErrorBoundary>
       </Router>
     </AuthProvider>

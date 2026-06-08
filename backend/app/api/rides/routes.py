@@ -10,9 +10,57 @@ from app.services.routing import calculate_route, calculate_fare, calculate_surg
 
 rides_bp = Blueprint("rides", __name__)
 
+# Register rating sub-routes
+from app.api.rides.ratings import ratings_bp  # noqa: E402
+rides_bp.register_blueprint(ratings_bp)
+
 
 def _get_current_user():
     return User.objects(id=get_jwt_identity()).first()
+
+
+@rides_bp.route("/available", methods=["GET"])
+@jwt_required()
+def available_rides():
+    """
+    Driver polls this to see unassigned rides near their location.
+    Returns rides in 'searching' status within 15km of the driver.
+    """
+    driver = _get_current_user()
+    if not driver or driver.role != "driver":
+        return jsonify({"error": "Driver access only"}), 403
+
+    # Update driver's location if passed in query parameters
+    lat_param = request.args.get("lat")
+    lng_param = request.args.get("lng")
+    if lat_param is not None and lng_param is not None:
+        try:
+            driver.last_lat = float(lat_param)
+            driver.last_lng = float(lng_param)
+            driver.save()
+        except ValueError:
+            pass
+
+    # Get all searching rides (no driver assigned yet)
+    rides = Ride.objects(status="searching", driver_id=None).order_by("-created_at").limit(20)
+
+    result = []
+    for ride in rides:
+        try:
+            dist = haversine_km(
+                driver.last_lat, driver.last_lng,
+                ride.pickup["lat"], ride.pickup["lng"]
+            )
+            if dist <= 15.0:
+                ride_data = ride.to_json_safe()
+                ride_data["distance_to_pickup_km"] = round(dist, 2)
+                result.append(ride_data)
+        except Exception:
+            continue
+
+    # Sort by proximity
+    result.sort(key=lambda r: r.get("distance_to_pickup_km", 99))
+    return jsonify(result), 200
 
 
 @rides_bp.route("/estimate", methods=["POST"])
@@ -77,6 +125,15 @@ def book_ride():
         if user.role != "passenger":
             return jsonify({"error": f"Only passengers can book rides. Your role: {user.role}"}), 403
 
+        active_statuses = ["searching", "driver_assigned", "driver_arriving", "in_progress"]
+        existing_ride = Ride.objects(passenger_id=user, status__in=active_statuses).first()
+        if existing_ride:
+            return jsonify({
+                "error": "You already have an active ride",
+                "ride_id": str(existing_ride.id),
+                "status": existing_ride.status
+            }), 409
+
         data = request.get_json()
         if not data:
             return jsonify({"error": "No data provided"}), 400
@@ -123,27 +180,19 @@ def book_ride():
         
         distance_km = route['distance_meters'] / 1000
 
-        # Find a matching driver
-        driver = _match_driver(ride_type, women_only, user, pickup_lat, pickup_lng)
-
-        # Compute pre-trip risk score
-        risk_score, risk_label = (0.0, "green")
-        if driver:
-            risk_score, risk_label = compute_risk_score(str(driver.id))
-
         # CO₂ & green points
         co2_saved = calculate_co2_saved(distance_km, ride_type, pool_passengers)
         green_pts  = calculate_green_points(ride_type)
 
         ride = Ride(
             passenger_id=user,
-            driver_id=driver,
+            driver_id=None,
             pickup=pickup,
             dropoff=dropoff,
-            status="searching" if not driver else "driver_assigned",
+            status="searching",
             ride_type=ride_type,
-            risk_score=risk_score,
-            risk_label=risk_label,
+            risk_score=0.0,
+            risk_label="green",
             co2_saved=co2_saved,
             green_points_awarded=green_pts,
             fare=fare_breakdown['total'],
@@ -160,10 +209,14 @@ def book_ride():
         if green_pts > 0:
             User.objects(id=user.id).update_one(inc__green_points=green_pts)
 
+        # Notify all online drivers immediately
+        from app.extensions import socketio
+        socketio.emit("new_ride_available", ride.to_json_safe(), room="drivers")
+
         return jsonify({
-            "message": "Ride booked successfully",
+            "message": "Ride booked! Waiting for a driver to accept.",
             "ride": ride.to_json_safe(),
-            "driver": driver.to_json_safe() if driver else None,
+            "driver": None,
             "route": route,
             "fare_breakdown": fare_breakdown
         }), 201
@@ -334,16 +387,151 @@ def get_driver_location(ride_id):
         ride = Ride.objects(id=ride_id).first()
         if not ride:
             return jsonify({"error": "Ride not found"}), 404
-        
+
         if not ride.driver_current_location:
             return jsonify({"error": "Driver location not available"}), 404
-        
+
         return jsonify({
             "ride_id": str(ride.id),
             "driver_location": ride.driver_current_location,
             "eta_minutes": ride.actual_eta_minutes,
             "status": ride.status
         }), 200
-        
+
     except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@rides_bp.route("/<ride_id>/accept", methods=["PATCH"])
+@jwt_required()
+def accept_ride(ride_id):
+    """
+    Driver accepts a ride in 'searching' status, self-assigning as the driver.
+    Updates status to 'driver_assigned' and notifies the passenger via socket.
+    """
+    try:
+        driver = _get_current_user()
+        if not driver or driver.role != "driver":
+            return jsonify({"error": "Driver access only"}), 403
+
+        ride = Ride.objects(id=ride_id).first()
+        if not ride:
+            return jsonify({"error": "Ride not found"}), 404
+
+        if ride.status != "searching":
+            return jsonify({"error": f"Ride is not available (status: {ride.status})"}), 400
+
+        if ride.driver_id:
+            return jsonify({"error": "Ride already has a driver"}), 400
+
+        # Assign driver and advance status
+        ride.driver_id = driver
+        ride.status = "driver_assigned"
+        ride.save()
+
+        # Notify passenger in real-time
+        from app.extensions import socketio
+        from app.utils.push import send_push
+        passenger_id = str(ride.passenger_id.id)
+        socketio.emit("ride_status_changed", {
+            "ride_id": str(ride.id),
+            "status": "driver_assigned",
+            "driver": driver.to_json_safe(),
+        }, room=f"passenger_{passenger_id}")
+
+        # Push notification to passenger (works when tab is in background)
+        send_push(
+            user_id=passenger_id,
+            title="Driver Found! 🚗",
+            body=f"{driver.name} accepted your ride and is on the way.",
+            url="/",
+        )
+
+        return jsonify({
+            "message": "Ride accepted",
+            "ride": ride.to_json_safe(),
+            "driver": driver.to_json_safe(),
+        }), 200
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
+
+@rides_bp.route("/<ride_id>/update-status", methods=["PATCH"])
+@jwt_required()
+def driver_update_status(ride_id):
+    """
+    Driver advances the ride lifecycle.
+    Valid transitions:
+      driver_assigned → driver_arriving  (driver sets off toward pickup)
+      driver_arriving → in_progress      (passenger on board, trip started)
+      in_progress     → completed        (trip finished at dropoff)
+      any active      → cancelled        (driver cancels)
+    Emits ride_status_changed to the passenger's socket room.
+    """
+    try:
+        driver = _get_current_user()
+        if not driver or driver.role != "driver":
+            return jsonify({"error": "Driver access only"}), 403
+
+        ride = Ride.objects(id=ride_id).first()
+        if not ride:
+            return jsonify({"error": "Ride not found"}), 404
+
+        # Verify this driver owns the ride
+        if not ride.driver_id or str(ride.driver_id.id) != str(driver.id):
+            return jsonify({"error": "You are not the driver for this ride"}), 403
+
+        new_status = request.get_json().get("status")
+        if not new_status:
+            return jsonify({"error": "status is required"}), 400
+
+        valid_transitions = {
+            "driver_assigned": ["driver_arriving", "cancelled"],
+            "driver_arriving": ["in_progress", "cancelled"],
+            "in_progress":     ["completed"],
+        }
+
+        allowed = valid_transitions.get(ride.status, [])
+        if new_status not in allowed:
+            return jsonify({
+                "error": f"Cannot transition from '{ride.status}' to '{new_status}'",
+                "allowed": allowed,
+            }), 400
+
+        ride.status = new_status
+        if new_status == "completed":
+            from datetime import datetime
+            ride.completed_at = datetime.utcnow()
+        ride.save()
+
+        # Notify passenger in real-time
+        from app.extensions import socketio
+        from app.utils.push import send_push
+        passenger_id = str(ride.passenger_id.id)
+        socketio.emit("ride_status_changed", {
+            "ride_id": str(ride.id),
+            "status": new_status,
+        }, room=f"passenger_{passenger_id}")
+
+        # Push notification based on new status
+        push_messages = {
+            "driver_arriving": ("Driver On The Way 📍", "Your driver is heading to your pickup location."),
+            "in_progress":     ("Ride Started 🚀", "You're on your way! Have a safe trip."),
+            "completed":       ("Ride Completed ✅", f"Your trip is complete. Fare: ₹{ride.fare:.0f}. Please rate your driver!"),
+        }
+        if new_status in push_messages:
+            title, body = push_messages[new_status]
+            send_push(user_id=passenger_id, title=title, body=body, url="/")
+
+        return jsonify({
+            "message": f"Ride status updated to '{new_status}'",
+            "ride": ride.to_json_safe(),
+        }), 200
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
         return jsonify({"error": str(e)}), 500

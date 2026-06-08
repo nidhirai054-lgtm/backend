@@ -39,9 +39,8 @@ const Dashboard = () => {
   const [activeTab,   setActiveTab]   = useState('map');
   const [lastRefresh, setLastRefresh] = useState(null);
 
-  if (user && user.role !== 'admin') return <Navigate to="/" />;
-
   const fetchData = useCallback(async () => {
+    if (!user || user.role !== 'admin') return;
     try {
       const [s, a, d] = await Promise.all([
         api.get('/dashboard/stats'),
@@ -57,13 +56,17 @@ const Dashboard = () => {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [user]);
 
   useEffect(() => {
-    fetchData();
-    const iv = setInterval(fetchData, 30000);
-    return () => clearInterval(iv);
-  }, [fetchData]);
+    if (user && user.role === 'admin') {
+      fetchData();
+      const iv = setInterval(fetchData, 30000);
+      return () => clearInterval(iv);
+    }
+  }, [fetchData, user]);
+
+  if (user && user.role !== 'admin') return <Navigate to="/" />;
 
   const resolveAlert = async (id) => {
     setResolving(id);
